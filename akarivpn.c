@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <signal.h>
+
+int terminated = 0;
 
 void
 akrvpn_err(const char *msg) {
@@ -17,4 +20,16 @@ akrvpn_info(const char *msg) {
 void
 akrvpn_dbg(const char *msg) {
   ;
+}
+
+static void
+sighandler(int sig) {
+  printf("terminated: reason %d\n", sig);
+  terminated = 1;
+}
+
+void
+signal_init() {
+  signal(SIGINT, sighandler);
+  signal(SIGTERM, sighandler);
 }

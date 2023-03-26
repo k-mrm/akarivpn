@@ -107,7 +107,8 @@ err:
 
 void
 netif_free(struct netif *netif) {
-  ;
+  close(netif->socket);
+  free(netif);
 }
 
 int
