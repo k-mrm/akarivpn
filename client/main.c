@@ -29,7 +29,7 @@ struct client_opt {
 
 struct vpn_client {
   int tap_fd;
-  int tcp_fd;
+  int server_fd;
 };
 
 static int
@@ -73,13 +73,16 @@ tcp_tunnel_init(struct vpn_client *cli, char *ip, uint16_t port) {
     return -1;
   }
 
+  cli->server_fd = sock;
   printf("tcp connection done\n");
 
   return 0;
 }
 
 static int
-client_loop(struct vpn_client *cli) {
+clientloop(struct vpn_client *cli) {
+  ;
+  
   while(!terminated) {
     ;
   }
@@ -102,10 +105,10 @@ do_vpn_client(struct client_opt *opt) {
 
   if(tap_init(&client, "tap114514") < 0)
     return -1;
-  if(tcp_tunnel_init(&client, "127.0.0.1", 443) < 0)
+  if(tcp_tunnel_init(&client, "127.0.0.1", 1145) < 0)
     return -1;
 
-  return client_loop(&client);
+  return clientloop(&client);
 }
 
 int

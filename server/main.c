@@ -16,13 +16,76 @@
 #include "akarivpn.h"
 #include "netif.h"
 
-struct vpn_server {
+extern int terminated;
 
+struct vpn_server {
+  int socket;
+  int client_fd;
 };
 
 static int
-do_vpn_server() {
+tcp_tunnel_prepare(struct vpn_server *serv) {
+  int sock;
+  struct sockaddr_in sin;
+
+  if((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+    perror("socket");
+    return -1;
+  }
+
+  sin.sin_family = AF_INET;
+  sin.sin_port = htons(1145);
+  sin.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+  if(bind(sock, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+    perror("bind");
+    return -1;
+  }
+  if(listen(sock, 5) < 0) {
+    perror("listen");
+    return -1;
+  }
+
+  serv->socket = sock;
+
   return 0;
+}
+
+static int
+tcp_accept(struct vpn_server *serv) {
+  int client_fd;
+
+  if((client_fd = accept(serv->socket, NULL, NULL)) < 0) {
+    perror("accept");
+    return -1;
+  }
+  
+  serv->client_fd = client_fd;
+  return 0;
+}
+
+static int
+serverloop(struct vpn_server *serv) {
+  while(!terminated) {
+    printf("waiting connection...\n");
+    if(tcp_accept(serv) < 0)
+      return -1;
+
+    printf("connected: %d\n", serv->client_fd);
+    return 0;
+  }
+
+  return 0;
+}
+
+static int
+do_vpn_server() {
+  struct vpn_server serv;
+
+  if(tcp_tunnel_prepare(&serv) < 0)
+    return -1;
+
+  return serverloop(&serv);
 }
 
 int
