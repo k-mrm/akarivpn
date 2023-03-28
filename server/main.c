@@ -20,7 +20,7 @@ extern int terminated;
 
 struct client {
   int fd;
-  uint32_t addr;
+  struct in_addr addr;
   uint16_t port;
 };
 
@@ -75,12 +75,12 @@ tcp_accept(struct vpn_server *serv) {
     return -1;
   }
   if(sin_len <= 0) {
-    perror("fuck");
+    perror("wtf");
     return -1;
   }
   
   serv->client.fd = client_fd;
-  serv->client.addr = client_sin.sin_addr.s_addr;
+  memcpy(&serv->client.addr, &client_sin.sin_addr, sizeof(serv->client.addr));
   serv->client.port = ntohs(client_sin.sin_port);
 
   return 0;
@@ -101,15 +101,16 @@ serverloop(struct vpn_server *serv) {
   int nready;
 
   while(!terminated) {
+    const char *ip;
+
     printf("waiting connection...\n");
     if(tcp_accept(serv) < 0)
       return -1;
 
-    printf("connected: %d %d %d\n", serv->client.fd, serv->client.addr, serv->client.port);
+    ip = inet_ntoa(serv->client.addr);
+    printf("connected: %d %s %d\n", serv->client.fd, ip, serv->client.port);
 
     client_disconnect(&serv->client);
-
-    break;
   }
 
   vpn_server_close(serv);
@@ -124,21 +125,10 @@ do_vpn_server() {
   if(tcp_tunnel_prepare(&serv) < 0)
     return -1;
 
-  serv.fds[0] = (struct pollfd){
-    .fd = 0,
-    .events = POLLIN,
-  };
-  serv.fds[1] = (struct pollfd){
-    .fd = 0,
-    .events = POLLIN,
-  };
-
   return serverloop(&serv);
 }
 
 int
 main(int argc, char **argv) {
-  signal_init();
-
   return do_vpn_server();
 }
