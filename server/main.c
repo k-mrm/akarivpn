@@ -18,14 +18,22 @@
 
 extern int terminated;
 
+struct client {
+  int fd;
+  uint32_t addr;
+  uint16_t port;
+};
+
 struct vpn_server {
+  struct pollfd fds[2];
   int socket;
-  int client_fd;
+  struct client client;
 };
 
 static int
 tcp_tunnel_prepare(struct vpn_server *serv) {
   int sock;
+  int yes = 1;
   struct sockaddr_in sin;
 
   if((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -37,10 +45,15 @@ tcp_tunnel_prepare(struct vpn_server *serv) {
   sin.sin_port = htons(1145);
   sin.sin_addr.s_addr = inet_addr("127.0.0.1");
 
+  if(setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) < 0) {
+    perror("setsockopt");
+    return -1;
+  }
   if(bind(sock, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
     perror("bind");
     return -1;
   }
+
   if(listen(sock, 5) < 0) {
     perror("listen");
     return -1;
@@ -54,26 +67,52 @@ tcp_tunnel_prepare(struct vpn_server *serv) {
 static int
 tcp_accept(struct vpn_server *serv) {
   int client_fd;
+  struct sockaddr_in client_sin;
+  socklen_t sin_len = sizeof(client_sin);
 
-  if((client_fd = accept(serv->socket, NULL, NULL)) < 0) {
+  if((client_fd = accept(serv->socket, (struct sockaddr *)&client_sin, &sin_len)) < 0) {
     perror("accept");
     return -1;
   }
+  if(sin_len <= 0) {
+    perror("fuck");
+    return -1;
+  }
   
-  serv->client_fd = client_fd;
+  serv->client.fd = client_fd;
+  serv->client.addr = client_sin.sin_addr.s_addr;
+  serv->client.port = ntohs(client_sin.sin_port);
+
   return 0;
+}
+
+static void
+client_disconnect(struct client *cli) {
+  close(cli->fd);
+}
+
+static void
+vpn_server_close(struct vpn_server *serv) {
+  close(serv->socket);
 }
 
 static int
 serverloop(struct vpn_server *serv) {
+  int nready;
+
   while(!terminated) {
     printf("waiting connection...\n");
     if(tcp_accept(serv) < 0)
       return -1;
 
-    printf("connected: %d\n", serv->client_fd);
-    return 0;
+    printf("connected: %d %d %d\n", serv->client.fd, serv->client.addr, serv->client.port);
+
+    client_disconnect(&serv->client);
+
+    break;
   }
+
+  vpn_server_close(serv);
 
   return 0;
 }
@@ -84,6 +123,15 @@ do_vpn_server() {
 
   if(tcp_tunnel_prepare(&serv) < 0)
     return -1;
+
+  serv.fds[0] = (struct pollfd){
+    .fd = 0,
+    .events = POLLIN,
+  };
+  serv.fds[1] = (struct pollfd){
+    .fd = 0,
+    .events = POLLIN,
+  };
 
   return serverloop(&serv);
 }
