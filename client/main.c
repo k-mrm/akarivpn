@@ -81,8 +81,6 @@ tcp_tunnel_init(struct vpn_client *cli, char *ip, uint16_t port) {
 
 static int
 clientloop(struct vpn_client *cli) {
-  ;
-  
   while(!terminated) {
     ;
   }
@@ -105,7 +103,7 @@ do_vpn_client(struct client_opt *opt) {
 
   if(tap_init(&client, "tap114514") < 0)
     return -1;
-  if(tcp_tunnel_init(&client, "127.0.0.1", 145) < 0)
+  if(tcp_tunnel_init(&client, "127.0.0.1", 1145) < 0)
     return -1;
 
   return clientloop(&client);

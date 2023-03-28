@@ -26,7 +26,9 @@ struct client {
 
 struct vpn_server {
   struct pollfd fds[2];
+  int nfds;
   int socket;
+  int timeout;
   struct client client;
 };
 
@@ -97,18 +99,64 @@ vpn_server_close(struct vpn_server *serv) {
 }
 
 static int
-serverloop(struct vpn_server *serv) {
-  int nready;
+pollfd_init(struct vpn_server *serv) {
+  serv->fds[0] = (struct pollfd){
+    .fd = serv->socket,
+    .events = POLLIN,
+  };
+  serv->fds[1] = (struct pollfd){
+    .fd = serv->client.fd,
+    .events = POLLIN,
+  };
+  serv->nfds = 2;
 
+  return 0;
+}
+
+static int
+server(struct vpn_server *serv) {
+  int nready = poll(serv->fds, serv->nfds, serv->timeout);
+  ssize_t size;
+  char buf[2048];
+
+  if(nready < 0)
+    return -1;
+
+  for(int i = 0; i < serv->nfds && nready; i++) {
+    struct pollfd *fd = &serv->fds[i];
+    if(fd->revents & POLLIN) {
+      nready--;
+
+      if(i == 0) {    // listener port
+        printf("connected from client");
+      } else {
+        if((size = read(fd->fd, buf, sizeof(buf))) <= 0) {
+          perror("disconnected?");
+          return -1;
+        }
+      }
+    }
+  }
+
+  return 0;
+}
+
+static int
+serverloop(struct vpn_server *serv) {
   while(!terminated) {
     const char *ip;
 
     printf("waiting connection...\n");
     if(tcp_accept(serv) < 0)
       return -1;
-
     ip = inet_ntoa(serv->client.addr);
     printf("connected: %d %s %d\n", serv->client.fd, ip, serv->client.port);
+
+    if(pollfd_init(serv) < 0)
+      return -1;
+
+    while(server(serv) == 0)
+      ;
 
     client_disconnect(&serv->client);
   }
@@ -124,6 +172,7 @@ do_vpn_server() {
 
   if(tcp_tunnel_prepare(&serv) < 0)
     return -1;
+  serv.timeout = 2000;
 
   return serverloop(&serv);
 }
