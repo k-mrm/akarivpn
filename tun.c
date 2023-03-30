@@ -10,10 +10,10 @@
 
 #include "tuntap.h"
 
-struct tunnel *
+struct tuntap *
 tun_alloc(const char *devname, int tuntap) {
   int fd;
-  struct tunnel *t = malloc(sizeof(*t));
+  struct tuntap *t = malloc(sizeof(*t));
   if(!t)
     return NULL;
 
@@ -36,11 +36,11 @@ tun_alloc(const char *devname, int tuntap) {
 }
 
 ssize_t
-tun_write(struct tunnel *t, unsigned char *buf, size_t n) {
+tun_write(struct tuntap *t, unsigned char *buf, size_t n) {
   return write(t->fd, buf, n);
 }
 
 ssize_t
-tun_read(struct tunnel *t, unsigned char *buf, size_t n) {
+tun_read(struct tuntap *t, unsigned char *buf, size_t n) {
   return read(t->fd, buf, n);
 }

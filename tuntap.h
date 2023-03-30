@@ -6,15 +6,14 @@
 #include <net/if.h> 
 #include <linux/if_tun.h>
 
-struct tunnel {
+struct tuntap {
   char name[IFNAMSIZ];
   struct ifreq ifr;
   int fd;
 };
 
-struct tunnel *tun_alloc(const char *devname, int tuntap);
-int tun_up(struct tunnel *tun);
-ssize_t tun_write(struct tunnel *t, unsigned char *buf, size_t n);
-ssize_t tun_read(struct tunnel *t, unsigned char *buf, size_t n);
+struct tuntap *tun_alloc(const char *devname, int tuntap);
+ssize_t tun_write(struct tuntap *t, unsigned char *buf, size_t n);
+ssize_t tun_read(struct tuntap *t, unsigned char *buf, size_t n);
 
 #endif

@@ -14,6 +14,7 @@
 
 #include "akarivpn.h"
 #include "netif.h"
+#include "tuntap.h"
 
 extern int terminated;
 
@@ -24,10 +25,11 @@ struct client {
 };
 
 struct vpn_server {
-  struct pollfd fds[2];
+  struct pollfd fds[3];
   int nfds;
   int socket;
   int timeout;
+  struct tuntap *tun;
   struct client client;
 };
 
@@ -107,7 +109,11 @@ pollfd_init(struct vpn_server *serv) {
     .fd = serv->client.fd,
     .events = POLLIN,
   };
-  serv->nfds = 2;
+  serv->fds[2] = (struct pollfd){
+    .fd = serv->tun->fd,
+    .events = POLLIN,
+  };
+  serv->nfds = 3;
 
   return 0;
 }
@@ -115,7 +121,7 @@ pollfd_init(struct vpn_server *serv) {
 static int
 server(struct vpn_server *serv) {
   int nready = poll(serv->fds, serv->nfds, 2000);
-  ssize_t size;
+  ssize_t size, wsize;
   unsigned char buf[2048];
 
   if(nready < 0)
@@ -126,15 +132,30 @@ server(struct vpn_server *serv) {
     if(fd->revents & POLLIN) {
       nready--;
 
-      if(i == 0) {    // listener port
+      if(i == 0) {          // listener port
         printf("connected from client\n");
-      } else {
+      } else if(i == 1) {   // client
         if((size = read(fd->fd, buf, sizeof(buf))) <= 0) {
           printf("client disconnected\n");
           return -1;
         }
 
         l2packet_dump(buf, size);
+
+        if((wsize = tun_write(serv->tun, buf, size)) <= 0) {
+          perror("tunwrite");
+          return -1;
+        }
+      } else {              // tap
+        if((size = tun_read(serv->tun, buf, sizeof(buf))) <= 0) {
+          perror("tunread");
+          return -1;
+        }
+
+        if((wsize = write(serv->client.fd, buf, size)) <= 0) {
+          perror("write");
+          return -1;
+        }
       }
     }
   }
@@ -173,6 +194,10 @@ do_vpn_server() {
 
   if(tcp_tunnel_prepare(&serv) < 0)
     return -1;
+  if((serv.tun = tun_alloc("tap1919", IFF_TAP)) == NULL) {
+    printf("wtf\n");
+    return -1;
+  }
 
   return serverloop(&serv);
 }

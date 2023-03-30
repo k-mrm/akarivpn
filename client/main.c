@@ -26,7 +26,7 @@ struct client_opt {
 };
 
 struct vpn_client {
-  struct tunnel *tun;
+  struct tuntap *tun;
   int server_fd;
   struct pollfd fds[2];
   int nfds;
@@ -82,9 +82,13 @@ clientcore(struct vpn_client *cli) {
           return -1;
         }
       } else {        // server
-        printf("from server\n");
         if((size = read(cli->server_fd, buf, sizeof(buf))) <= 0) {
           printf("server disconnected\n");
+          return -1;
+        }
+
+        if((wsize = tun_write(cli->tun, buf, size)) <= 0) {
+          perror("tunwrite");
           return -1;
         }
       }
