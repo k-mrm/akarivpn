@@ -60,8 +60,8 @@ tcp_tunnel_init(struct vpn_client *cli, char *ip, uint16_t port) {
 static int
 clientcore(struct vpn_client *cli) {
   int nready = poll(cli->fds, cli->nfds, 2000);
-  ssize_t size;
-  char buf[2048];
+  ssize_t size, wsize;
+  unsigned char buf[2048];
 
   if(nready < 0)
     return -1;
@@ -76,12 +76,17 @@ clientcore(struct vpn_client *cli) {
           perror("tunread");
           return -1;
         }
-        for(int c = 0; c < 64; c++) {
-          printf("%02x ", buf[c]);
+
+        if((wsize = write(cli->server_fd, buf, size)) <= 0) {
+          perror("disconnected?");
+          return -1;
         }
       } else {        // server
         printf("from server\n");
-        return -1;
+        if((size = read(cli->server_fd, buf, sizeof(buf))) <= 0) {
+          printf("server disconnected\n");
+          return -1;
+        }
       }
     }
   }
@@ -100,6 +105,9 @@ clientloop(struct vpn_client *cli) {
     .events = POLLIN,
   };
   cli->nfds = 2;
+
+  printf("fd tun %d serv %d\n", cli->tun->fd, cli->server_fd);
+  printf("tap %s\n", cli->tun->name);
 
   while(!terminated && clientcore(cli) == 0)
     ;
@@ -120,7 +128,8 @@ do_vpn_client(struct client_opt *opt) {
   printf("found network interface: %s hw %02x:%02x:%02x:%02x:%02x:%02x\n",
          netif->ifname, m[0], m[1], m[2], m[3], m[4], m[5]);
 
-  if((client.tun = tun_alloc("tap114514")) == NULL) {
+  if((client.tun = tun_alloc("tap114514", IFF_TAP)) == NULL) {
+  // if((client.tun = tun_alloc("tun19", IFF_TUN)) == NULL) {
     printf("wtf\n");
     return -1;
   }

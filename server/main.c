@@ -116,7 +116,7 @@ static int
 server(struct vpn_server *serv) {
   int nready = poll(serv->fds, serv->nfds, 2000);
   ssize_t size;
-  char buf[2048];
+  unsigned char buf[2048];
 
   if(nready < 0)
     return -1;
@@ -133,7 +133,8 @@ server(struct vpn_server *serv) {
           printf("client disconnected\n");
           return -1;
         }
-        printf("%s\n", buf);
+
+        l2packet_dump(buf, size);
       }
     }
   }
