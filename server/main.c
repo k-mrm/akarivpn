@@ -8,7 +8,6 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <net/ethernet.h>
-#include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
 #include <linux/if_packet.h>
@@ -115,7 +114,7 @@ pollfd_init(struct vpn_server *serv) {
 
 static int
 server(struct vpn_server *serv) {
-  int nready = poll(serv->fds, serv->nfds, serv->timeout);
+  int nready = poll(serv->fds, serv->nfds, 2000);
   ssize_t size;
   char buf[2048];
 
@@ -128,12 +127,13 @@ server(struct vpn_server *serv) {
       nready--;
 
       if(i == 0) {    // listener port
-        printf("connected from client");
+        printf("connected from client\n");
       } else {
         if((size = read(fd->fd, buf, sizeof(buf))) <= 0) {
-          perror("disconnected?");
+          printf("client disconnected\n");
           return -1;
         }
+        printf("%s\n", buf);
       }
     }
   }
@@ -172,7 +172,6 @@ do_vpn_server() {
 
   if(tcp_tunnel_prepare(&serv) < 0)
     return -1;
-  serv.timeout = 2000;
 
   return serverloop(&serv);
 }

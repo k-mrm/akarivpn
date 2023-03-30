@@ -4,7 +4,7 @@ LD = ld
 CFLAGS += -Wall -Wextra -I ./ -Og
 
 TARGET = akarivpn-client akarivpn-server
-OBJS = akarivpn.o netif.o
+OBJS = akarivpn.o netif.o tun.o
 COBJS = client/main.o
 SOBJS = server/main.o
 

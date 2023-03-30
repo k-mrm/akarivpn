@@ -10,15 +10,13 @@
 #include <fcntl.h>
 #include <arpa/inet.h>
 #include <net/ethernet.h>
-#include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
-#include <linux/if.h>
 #include <linux/if_packet.h>
-#include <linux/if_tun.h>
 
 #include "akarivpn.h"
 #include "netif.h"
+#include "tuntap.h"
 
 extern int terminated;
 
@@ -28,31 +26,11 @@ struct client_opt {
 };
 
 struct vpn_client {
-  int tap_fd;
+  struct tunnel *tun;
   int server_fd;
+  struct pollfd fds[2];
+  int nfds;
 };
-
-static int
-tap_init(struct vpn_client *cli, const char *tapname) {
-  int fd;
-  struct ifreq ifr = {0};
-
-  if((fd = open("/dev/net/tun", O_RDWR)) < 0) {
-    perror("open /dev/net/tun failed");
-    return -1;
-  }
-
-  ifr.ifr_flags = IFF_TAP | IFF_NO_PI;
-  strncpy(ifr.ifr_name, tapname, sizeof(ifr.ifr_name) - 1);
-  if(ioctl(fd, TUNSETIFF, &ifr) < 0) {
-    perror("TUNSETIFF");
-    return -1;
-  }
-
-  cli->tap_fd = fd;
-
-  return 0;
-}
 
 static int
 tcp_tunnel_init(struct vpn_client *cli, char *ip, uint16_t port) {
@@ -80,10 +58,51 @@ tcp_tunnel_init(struct vpn_client *cli, char *ip, uint16_t port) {
 }
 
 static int
-clientloop(struct vpn_client *cli) {
-  while(!terminated) {
-    ;
+clientcore(struct vpn_client *cli) {
+  int nready = poll(cli->fds, cli->nfds, 2000);
+  ssize_t size;
+  char buf[2048];
+
+  if(nready < 0)
+    return -1;
+
+  for(int i = 0; i < cli->nfds && nready; i++) {
+    struct pollfd *fd = &cli->fds[i];
+    if(fd->revents & POLLIN) {
+      nready--;
+
+      if(i == 0) {    // tun
+        if((size = tun_read(cli->tun, buf, sizeof(buf))) <= 0) {
+          perror("tunread");
+          return -1;
+        }
+        for(int c = 0; c < 64; c++) {
+          printf("%02x ", buf[c]);
+        }
+      } else {        // server
+        printf("from server\n");
+        return -1;
+      }
+    }
   }
+
+  return 0;
+}
+
+static int
+clientloop(struct vpn_client *cli) {
+  cli->fds[0] = (struct pollfd){
+    .fd = cli->tun->fd,
+    .events = POLLIN,
+  };
+  cli->fds[1] = (struct pollfd){
+    .fd = cli->server_fd,
+    .events = POLLIN,
+  };
+  cli->nfds = 2;
+
+  while(!terminated && clientcore(cli) == 0)
+    ;
 
   return 0;
 }
@@ -101,8 +120,11 @@ do_vpn_client(struct client_opt *opt) {
   printf("found network interface: %s hw %02x:%02x:%02x:%02x:%02x:%02x\n",
          netif->ifname, m[0], m[1], m[2], m[3], m[4], m[5]);
 
-  if(tap_init(&client, "tap114514") < 0)
+  if((client.tun = tun_alloc("tap114514")) == NULL) {
+    printf("wtf\n");
     return -1;
+  }
+
   if(tcp_tunnel_init(&client, "127.0.0.1", 1145) < 0)
     return -1;
 
