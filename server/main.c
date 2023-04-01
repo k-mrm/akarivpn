@@ -46,7 +46,7 @@ tcp_tunnel_prepare(struct vpn_server *serv) {
 
   sin.sin_family = AF_INET;
   sin.sin_port = htons(1145);
-  sin.sin_addr.s_addr = inet_addr("127.0.0.1");
+  sin.sin_addr.s_addr = htonl(INADDR_ANY);
 
   if(setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) < 0) {
     perror("setsockopt");
@@ -198,6 +198,7 @@ do_vpn_server() {
     printf("wtf\n");
     return -1;
   }
+  tun_setup(serv.tun, "192.168.1.1", "255.255.255.0");
 
   return serverloop(&serv);
 }

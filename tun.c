@@ -7,8 +7,52 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <netinet/if_ether.h>
 
 #include "tuntap.h"
+
+int
+tun_setup(struct tuntap *tun, const char *ip, const char *submask) {
+  struct ifreq ifr;
+  struct sockaddr_in *sin;
+  int fd, ret = -1;
+
+  if((fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+    return -1;
+  strncpy(ifr.ifr_name, tun->name, sizeof(ifr.ifr_name) - 1);
+
+  if(ioctl(fd, SIOCGIFFLAGS, &ifr) < 0) {
+    perror("SIOCGIFFLAGS");
+    goto end;
+  }
+  ifr.ifr_flags |= IFF_UP;
+  if(ioctl(fd, SIOCSIFFLAGS, &ifr) < 0) {
+    perror("SIOCSIFFLAGS");
+    goto end;
+  }
+
+  ifr.ifr_addr.sa_family = AF_INET;
+  sin = (struct sockaddr_in *)&ifr.ifr_addr;
+  inet_pton(AF_INET, ip, &sin->sin_addr);
+  if(ioctl(fd, SIOCSIFADDR, &ifr) < 0) {
+    perror("SIOCSIFADDR");
+    goto end;
+  }
+
+  inet_pton(AF_INET, submask, &sin->sin_addr);
+  if(ioctl(fd, SIOCSIFNETMASK, &ifr) < 0) {
+    perror("SIOCSIFNETMASK");
+    goto end;
+  }
+
+  ret = 0;
+
+end:
+  close(fd);
+  return ret;
+}
 
 struct tuntap *
 tun_alloc(const char *devname, int tuntap) {

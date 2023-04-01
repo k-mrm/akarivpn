@@ -137,8 +137,9 @@ do_vpn_client(struct client_opt *opt) {
     printf("wtf\n");
     return -1;
   }
+  tun_setup(client.tun, "192.168.1.20", "255.255.255.0");
 
-  if(tcp_tunnel_init(&client, "127.0.0.1", 1145) < 0)
+  if(tcp_tunnel_init(&client, "10.0.0.2", 1145) < 0)
     return -1;
 
   return clientloop(&client);
