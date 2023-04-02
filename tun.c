@@ -14,7 +14,7 @@
 #include "tuntap.h"
 
 int
-tun_setup(struct tuntap *tun, const char *ip, const char *submask) {
+tun_setup(struct tuntap *tun, const char *ip, const char *netmask) {
   struct ifreq ifr;
   struct sockaddr_in *sin;
   int fd, ret = -1;
@@ -41,7 +41,7 @@ tun_setup(struct tuntap *tun, const char *ip, const char *submask) {
     goto end;
   }
 
-  inet_pton(AF_INET, submask, &sin->sin_addr);
+  inet_pton(AF_INET, netmask, &sin->sin_addr);
   if(ioctl(fd, SIOCSIFNETMASK, &ifr) < 0) {
     perror("SIOCSIFNETMASK");
     goto end;

@@ -13,17 +13,13 @@
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
 #include <linux/if_packet.h>
+#include <getopt.h>
 
 #include "akarivpn.h"
 #include "netif.h"
 #include "tuntap.h"
 
 extern int terminated;
-
-struct client_opt {
-  char *ifname;
-  char *ipport;
-};
 
 struct vpn_client {
   struct tuntap *tun;
@@ -120,17 +116,8 @@ clientloop(struct vpn_client *cli) {
 }
 
 static int
-do_vpn_client(struct client_opt *opt) {
-  struct netif *netif = netif_init(opt->ifname, 1);
+do_vpn_client(char *serv_ip, int port) {
   struct vpn_client client;
-  uint8_t *m;
-
-  if(!netif)
-    return -1;
-
-  m = netif->hwaddr;
-  printf("found network interface: %s hw %02x:%02x:%02x:%02x:%02x:%02x\n",
-         netif->ifname, m[0], m[1], m[2], m[3], m[4], m[5]);
 
   if((client.tun = tun_alloc("tap114514", IFF_TAP)) == NULL) {
   // if((client.tun = tun_alloc("tun19", IFF_TUN)) == NULL) {
@@ -139,7 +126,7 @@ do_vpn_client(struct client_opt *opt) {
   }
   tun_setup(client.tun, "192.168.1.20", "255.255.255.0");
 
-  if(tcp_tunnel_init(&client, "10.0.0.2", 1145) < 0)
+  if(tcp_tunnel_init(&client, serv_ip, port) < 0)
     return -1;
 
   return clientloop(&client);
@@ -147,15 +134,31 @@ do_vpn_client(struct client_opt *opt) {
 
 int
 main(int argc, char **argv) {
-  struct client_opt opt;
+  int opt, port = -1;
+  char *ip = NULL;
 
-  if(argc < 2)
+  while((opt = getopt(argc, argv, "s:p:")) != -1) {
+    switch(opt) {
+      case 's':
+        ip = optarg;
+        break;
+      case 'p':
+        port = atoi(optarg);
+        break;
+      default:
+        printf("invalid");
+        return -1;
+    }
+  }
+
+  if(!ip) {
+    printf("server ip?\n");
     return -1;
-
-  opt.ipport = argv[1];
-  opt.ifname = "wlp59s0";
+  }
+  if(port < 0)
+    port = 1145;    // default port
 
   signal_init();
 
-  return do_vpn_client(&opt);
+  return do_vpn_client(ip, port);
 }
