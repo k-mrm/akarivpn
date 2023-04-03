@@ -182,10 +182,11 @@ server(struct vpn_server *serv) {
       } else {              // client
         int cli_idx = i - 2;
         struct client *cli = serv->clients[cli_idx];
+        printf("from client: %s\n", inet_ntoa(cli->addr));
 
         if((size = read(cli->fd, buf, sizeof(buf))) <= 0) {
           client_disconnect(cli);
-          return -1;
+          return 0;
         }
 
         l2packet_dump(buf, size);
@@ -203,12 +204,12 @@ server(struct vpn_server *serv) {
 
 static int
 serverloop(struct vpn_server *serv) {
+  if(pollfd_prepare(serv) < 0)
+    return -1;
+
   while(!terminated) {
     printf("waiting connection...\n");
     if(connect_from_client(serv) < 0)
-      return -1;
-
-    if(pollfd_prepare(serv) < 0)
       return -1;
 
     while(server(serv) == 0)

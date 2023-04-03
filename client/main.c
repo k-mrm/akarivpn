@@ -116,7 +116,7 @@ clientloop(struct vpn_client *cli) {
 }
 
 static int
-do_vpn_client(char *serv_ip, int port) {
+do_vpn_client(char *serv_ip, int port, char *myip) {
   struct vpn_client client;
 
   if((client.tun = tun_alloc("tap114514", IFF_TAP)) == NULL) {
@@ -124,7 +124,7 @@ do_vpn_client(char *serv_ip, int port) {
     printf("wtf\n");
     return -1;
   }
-  tun_setup(client.tun, "192.168.1.10", "255.255.255.0");
+  tun_setup(client.tun, myip, "255.255.255.0");
 
   if(tcp_tunnel_init(&client, serv_ip, port) < 0)
     return -1;
@@ -135,24 +135,33 @@ do_vpn_client(char *serv_ip, int port) {
 int
 main(int argc, char **argv) {
   int opt, port = -1;
-  char *ip = NULL;
+  char *serv_ip = NULL, *myip = NULL;
 
-  while((opt = getopt(argc, argv, "s:p:")) != -1) {
+  while((opt = getopt(argc, argv, "i:s:p:")) != -1) {
     switch(opt) {
+      case 'i':
+        myip = optarg;
+        break;
       case 's':
-        ip = optarg;
+        serv_ip = optarg;
         break;
       case 'p':
         port = atoi(optarg);
         break;
-      default:
-        printf("invalid");
+      case '?':
+        printf("parse error\n");
         return -1;
+      default:
+        break;
     }
   }
 
-  if(!ip) {
+  if(!serv_ip) {
     printf("server ip?\n");
+    return -1;
+  }
+  if(!myip) {
+    puts("?");
     return -1;
   }
   if(port < 0)
@@ -160,5 +169,5 @@ main(int argc, char **argv) {
 
   signal_init();
 
-  return do_vpn_client(ip, port);
+  return do_vpn_client(serv_ip, port, myip);
 }
