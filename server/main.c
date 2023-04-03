@@ -25,12 +25,13 @@ struct client {
 };
 
 struct vpn_server {
-  struct pollfd fds[3];
+  struct pollfd fds[16];
   int nfds;
   int socket;
   int timeout;
   struct tuntap *tun;
-  struct client client;
+  struct client *clients[14];
+  int nclient;
 };
 
 static int
@@ -67,30 +68,67 @@ tcp_tunnel_prepare(struct vpn_server *serv) {
   return 0;
 }
 
-static int
+static struct client *
 tcp_accept(struct vpn_server *serv) {
   int client_fd;
+  struct client *cli = NULL;
   struct sockaddr_in client_sin;
   socklen_t sin_len = sizeof(client_sin);
 
+  cli = malloc(sizeof(*cli));
+  if(!cli)
+    return NULL;
+
   if((client_fd = accept(serv->socket, (struct sockaddr *)&client_sin, &sin_len)) < 0) {
     perror("accept");
-    return -1;
+    goto err;
   }
   if(sin_len <= 0) {
     perror("wtf");
-    return -1;
+    goto err;
   }
   
-  serv->client.fd = client_fd;
-  memcpy(&serv->client.addr, &client_sin.sin_addr, sizeof(serv->client.addr));
-  serv->client.port = ntohs(client_sin.sin_port);
+  cli->fd = client_fd;
+  memcpy(&cli->addr, &client_sin.sin_addr, sizeof(cli->addr));
+  cli->port = ntohs(client_sin.sin_port);
+
+  return cli;
+
+err:
+  free(cli);
+  return NULL;
+}
+
+static void
+client_pollfd(struct vpn_server *serv, struct client *cli, int ev) {
+  serv->fds[serv->nfds] = (struct pollfd){
+    .fd = cli->fd,
+    .events = ev,
+  };
+
+  serv->nfds++;
+}
+
+static int
+connect_from_client(struct vpn_server *serv) {
+  struct client *client;
+
+  if((client = tcp_accept(serv)) == NULL)
+    return -1;
+
+  client_pollfd(serv, client, POLLIN);
+
+  serv->clients[serv->nclient] = client;
+  serv->nclient++;
+
+  printf("new client: %s\n", inet_ntoa(client->addr));
 
   return 0;
 }
 
 static void
 client_disconnect(struct client *cli) {
+  printf("client disconnected\n");
   close(cli->fd);
 }
 
@@ -100,20 +138,16 @@ vpn_server_close(struct vpn_server *serv) {
 }
 
 static int
-pollfd_init(struct vpn_server *serv) {
+pollfd_prepare(struct vpn_server *serv) {
   serv->fds[0] = (struct pollfd){
     .fd = serv->socket,
     .events = POLLIN,
   };
   serv->fds[1] = (struct pollfd){
-    .fd = serv->client.fd,
-    .events = POLLIN,
-  };
-  serv->fds[2] = (struct pollfd){
     .fd = serv->tun->fd,
     .events = POLLIN,
   };
-  serv->nfds = 3;
+  serv->nfds = 2;
 
   return 0;
 }
@@ -133,10 +167,24 @@ server(struct vpn_server *serv) {
       nready--;
 
       if(i == 0) {          // listener port
-        printf("connected from client\n");
-      } else if(i == 1) {   // client
-        if((size = read(fd->fd, buf, sizeof(buf))) <= 0) {
-          printf("client disconnected\n");
+        if(connect_from_client(serv) < 0)
+          return -1;
+      } else if(i == 1) {   // tap
+        if((size = tun_read(serv->tun, buf, sizeof(buf))) <= 0) {
+          perror("tunread");
+          return -1;
+        }
+
+        if((wsize = write(serv->clients[0]->fd, buf, size)) <= 0) {
+          perror("write");
+          return -1;
+        }
+      } else {              // client
+        int cli_idx = i - 2;
+        struct client *cli = serv->clients[cli_idx];
+
+        if((size = read(cli->fd, buf, sizeof(buf))) <= 0) {
+          client_disconnect(cli);
           return -1;
         }
 
@@ -144,16 +192,6 @@ server(struct vpn_server *serv) {
 
         if((wsize = tun_write(serv->tun, buf, size)) <= 0) {
           perror("tunwrite");
-          return -1;
-        }
-      } else {              // tap
-        if((size = tun_read(serv->tun, buf, sizeof(buf))) <= 0) {
-          perror("tunread");
-          return -1;
-        }
-
-        if((wsize = write(serv->client.fd, buf, size)) <= 0) {
-          perror("write");
           return -1;
         }
       }
@@ -166,21 +204,15 @@ server(struct vpn_server *serv) {
 static int
 serverloop(struct vpn_server *serv) {
   while(!terminated) {
-    const char *ip;
-
     printf("waiting connection...\n");
-    if(tcp_accept(serv) < 0)
+    if(connect_from_client(serv) < 0)
       return -1;
-    ip = inet_ntoa(serv->client.addr);
-    printf("connected: %d %s %d\n", serv->client.fd, ip, serv->client.port);
 
-    if(pollfd_init(serv) < 0)
+    if(pollfd_prepare(serv) < 0)
       return -1;
 
     while(server(serv) == 0)
       ;
-
-    client_disconnect(&serv->client);
   }
 
   vpn_server_close(serv);
@@ -190,7 +222,7 @@ serverloop(struct vpn_server *serv) {
 
 static int
 do_vpn_server() {
-  struct vpn_server serv;
+  struct vpn_server serv = {0};
 
   if(tcp_tunnel_prepare(&serv) < 0)
     return -1;

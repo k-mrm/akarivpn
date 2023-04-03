@@ -124,7 +124,7 @@ do_vpn_client(char *serv_ip, int port) {
     printf("wtf\n");
     return -1;
   }
-  tun_setup(client.tun, "192.168.1.20", "255.255.255.0");
+  tun_setup(client.tun, "192.168.1.10", "255.255.255.0");
 
   if(tcp_tunnel_init(&client, serv_ip, port) < 0)
     return -1;
