@@ -1,12 +1,14 @@
 #ifndef AKARIVPN_H
 #define AKARIVPN_H
 
-struct pollevent {
-  ;
-};
+#include <poll.h>
 
-void akrvpn_err(const char *msg);
-void akrvpn_info(const char *msg);
-void akrvpn_dbg(const char *msg);
+extern int terminated;
+
+struct events {
+  struct pollfd fds[16];
+  int ids[16];
+  int nfds;
+};
 
 #endif

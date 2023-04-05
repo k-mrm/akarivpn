@@ -57,6 +57,7 @@ end:
 struct tuntap *
 tun_alloc(const char *devname, int tuntap) {
   int fd;
+  struct ifreq ifr;
   struct tuntap *t = malloc(sizeof(*t));
   if(!t)
     return NULL;
@@ -66,14 +67,14 @@ tun_alloc(const char *devname, int tuntap) {
     return NULL;
   }
 
-  t->ifr.ifr_flags = tuntap | IFF_NO_PI;
-  strncpy(t->ifr.ifr_name, devname, sizeof(t->ifr.ifr_name) - 1);
-  if(ioctl(fd, TUNSETIFF, &t->ifr) < 0) {
+  ifr.ifr_flags = tuntap | IFF_NO_PI;
+  strncpy(ifr.ifr_name, devname, sizeof(ifr.ifr_name) - 1);
+  if(ioctl(fd, TUNSETIFF, &ifr) < 0) {
     perror("TUNSETIFF");
     return NULL;
   }
 
-  strncpy(t->name, t->ifr.ifr_name, sizeof(t->ifr.ifr_name) - 1);
+  strncpy(t->name, ifr.ifr_name, sizeof(ifr.ifr_name) - 1);
   t->fd = fd;
 
   return t;

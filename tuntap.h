@@ -8,7 +8,6 @@
 
 struct tuntap {
   char name[IFNAMSIZ];
-  struct ifreq ifr;
   int fd;
 };
 

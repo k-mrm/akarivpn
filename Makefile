@@ -4,9 +4,9 @@ LD = ld
 CFLAGS += -Wall -Wextra -I ./ -Og
 
 TARGET = akarivpn-client akarivpn-server
-OBJS = akarivpn.o netif.o tun.o
+OBJS = akarivpn.o session.o tuntap.o
 COBJS = client/main.o
-SOBJS = server/main.o
+SOBJS = server/main.o server/client.o
 
 .PHONY: client server clean
 
@@ -20,4 +20,4 @@ server: $(OBJS) $(SOBJS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	$(RM) *.out $(OBJS) $(TARGET)
+	$(RM) *.out $(OBJS) $(TARGET) $(COBJS) $(SOBJS)

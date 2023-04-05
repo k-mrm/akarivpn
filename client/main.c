@@ -29,31 +29,6 @@ struct vpn_client {
 };
 
 static int
-tcp_tunnel_init(struct vpn_client *cli, char *ip, uint16_t port) {
-  int sock;
-  struct sockaddr_in sin = {0};
-
-  if((sock = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
-    perror("socket");
-    return -1;
-  }
-
-  sin.sin_family = AF_INET;
-  sin.sin_port = htons(port);
-  sin.sin_addr.s_addr = inet_addr(ip);
-
-  if(connect(sock, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
-    perror("connect");
-    return -1;
-  }
-
-  cli->server_fd = sock;
-  printf("tcp connection done\n");
-
-  return 0;
-}
-
-static int
 clientcore(struct vpn_client *cli) {
   int nready = poll(cli->fds, cli->nfds, 2000);
   ssize_t size, wsize;
@@ -67,7 +42,7 @@ clientcore(struct vpn_client *cli) {
     if(fd->revents & POLLIN) {
       nready--;
 
-      if(i == 0) {    // tun
+      if(i == 0) {    // from tap
         if((size = tun_read(cli->tun, buf, sizeof(buf))) <= 0) {
           perror("tunread");
           return -1;
@@ -77,7 +52,7 @@ clientcore(struct vpn_client *cli) {
           perror("disconnected?");
           return -1;
         }
-      } else {        // server
+      } else {        // from server
         if((size = read(cli->server_fd, buf, sizeof(buf))) <= 0) {
           printf("server disconnected\n");
           return -1;
@@ -116,8 +91,9 @@ clientloop(struct vpn_client *cli) {
 }
 
 static int
-do_vpn_client(char *serv_ip, int port, char *myip) {
+do_vpn_client(char *host, char *port, char *myip) {
   struct vpn_client client;
+  struct tunnel *tunnel;
 
   if((client.tun = tun_alloc("tap114514", IFF_TAP)) == NULL) {
   // if((client.tun = tun_alloc("tun19", IFF_TUN)) == NULL) {
@@ -126,7 +102,8 @@ do_vpn_client(char *serv_ip, int port, char *myip) {
   }
   tun_setup(client.tun, myip, "255.255.255.0");
 
-  if(tcp_tunnel_init(&client, serv_ip, port) < 0)
+  tunnel = connect_tunnel(host, port, PROTO_TCP);
+  if(!tunnel)
     return -1;
 
   return clientloop(&client);
