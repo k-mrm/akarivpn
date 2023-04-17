@@ -8,11 +8,4 @@
 #include "tuntap.h"
 #include "tunnel.h"
 
-struct vpn_server {
-  struct events events;
-  int listen_fd;
-  struct tunnel *clients[16];
-  struct tuntap *tun;
-};
-
 #endif

@@ -1,3 +1,17 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <poll.h>
+#include <netdb.h>
+#include <sys/types.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <net/ethernet.h>
+#include <netinet/in.h>
+#include <netinet/if_ether.h>
+#include <linux/if_packet.h>
 #include "tunnel.h"
 
 struct tunnel *
@@ -24,6 +38,11 @@ tcp_tunnel_accept(int listen_fd) {
   return t;
 }
 
+static void
+free_tunnel(struct tunnel *t) {
+  free(t);
+}
+
 struct tunnel *
 connect_tunnel(const char *host, const char *port, enum protocol proto) {
   int sock;
@@ -43,10 +62,6 @@ connect_tunnel(const char *host, const char *port, enum protocol proto) {
     return NULL;
   }
 
-  sin.sin_family = AF_INET;
-  sin.sin_port = htons(port);
-  sin.sin_addr.s_addr = server_ip;
-
   if(connect(sock, res->ai_addr, res->ai_addrlen) < 0) {
     perror("connect");
     return NULL;
@@ -61,6 +76,12 @@ connect_tunnel(const char *host, const char *port, enum protocol proto) {
   printf("tunnel connection done\n");
 
   return t;
+}
+
+void
+tunnel_disconnected(struct tunnel *t) {
+  printf("tunnel disconnected\n");
+  free_tunnel(t);
 }
 
 int

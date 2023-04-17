@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <poll.h>
+#include <netdb.h>
 #include <sys/types.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -20,81 +21,85 @@
 
 extern int terminated;
 
-static void
-vpn_server_close(struct vpn_server *serv) {
-  close(serv->socket);
-}
+struct vpn_server {
+  struct events events;
+  struct tuntap *tt;
+};
+
+#define EV_NULL         0
+#define EV_LISTEN       1
+#define EV_TUNTAP       2
 
 static int
-pollfd_prepare(struct vpn_server *serv) {
-  serv->fds[0] = (struct pollfd){
-    .fd = serv->socket,
-    .events = POLLIN,
-  };
-  serv->fds[1] = (struct pollfd){
-    .fd = serv->tun->fd,
-    .events = POLLIN,
-  };
-  serv->nfds = 2;
+client_accept(struct vpn_server *serv, int listen_fd) {
+  struct tunnel *t = tcp_tunnel_accept(listen_fd);
+  if(!t)
+    return -1;
+
+  add_event(&serv->events, t->fd, t);
 
   return 0;
 }
 
 static int
 servercore(struct vpn_server *serv) {
-  int nready = events_poll(&serv->events, 2000);
-  ssize_t size, wsize;
+  ssize_t size;
   unsigned char buf[2048];
+  int nready;
+  struct revent revs[16];
 
-  if(nready < 0)
+  if((nready = events_poll_pollin(&serv->events, 2000, revs)) < 0)
     return -1;
 
-  for(int i = 0; i < serv->nfds && nready; i++) {
-    struct pollfd *fd = &serv->fds[i];
-    if(fd->revents & POLLIN) {
-      nready--;
+  for(int i = 0; i < nready; i++) {
+    struct pollfd *pfd = &revs[i].fd;
+    void *priv = revs[i].priv;
+    struct tunnel *tunnel;
+    int listen_fd, tun_fd;
 
-      if(i == 0) {          // listener port
-        if(connect_from_client(serv) < 0)
-          return -1;
-      } else if(i == 1) {   // tap
-        if((size = tun_read(serv->tun, buf, sizeof(buf))) <= 0) {
-          perror("tunread");
-          return -1;
-        }
+    switch((size_t)priv) {
+      case EV_LISTEN:
+        listen_fd = pfd->fd;
 
-        if((wsize = write(serv->clients[0]->fd, buf, size)) <= 0) {
-          perror("write");
+        if(client_accept(serv, listen_fd) < 0)
           return -1;
-        }
-      } else {              // client
-        int cli_idx = i - 2;
-        struct client *cli = serv->clients[cli_idx];
-        printf("from client: %s\n", inet_ntoa(cli->addr));
+        break;
+      case EV_TUNTAP:
+        if((size = tun_read(serv->tt, buf, sizeof(buf))) <= 0)
+          return -1;
 
-        if((size = read(cli->fd, buf, sizeof(buf))) <= 0) {
-          client_disconnect(serv, cli);
+        // TODO: route
+        break;
+      case EV_NULL:
+        printf("error");
+        return -1;
+      default:
+        tunnel = priv; 
+
+        if((size = tcp_tunnel_read(tunnel, buf, sizeof(buf))) <= 0) {
+          tunnel_disconnected(tunnel);
           return 0;
         }
-
         l2packet_dump(buf, size);
-
-        if((wsize = tun_write(serv->tun, buf, size)) <= 0) {
-          perror("tunwrite");
+        if(tun_write(serv->tt, buf, size) <= 0)
           return -1;
-        }
-      }
+        break;
     }
   }
 
   return 0;
 }
 
+static void
+vpn_server_close(struct vpn_server *serv) {
+  ;
+}
+
 static int
-serverloop(struct vpn_server *serv) {
+serverloop(struct vpn_server *serv, int listen_fd) {
   while(!terminated) {
     printf("waiting connection...\n");
-    if(tcp_tunnel_accept(serv->listen_fd) < 0)
+    if(client_accept(serv, listen_fd) < 0)
       return -1;
 
     while(servercore(serv) == 0)
@@ -113,18 +118,17 @@ do_vpn_server(void) {
 
   if((listen_fd = tunnel_listen(1145)) < 0)
     return -1;
-  serv.listen_fd = listen_fd;
 
-  if((serv.tun = tun_alloc("tap1919", IFF_TAP)) == NULL) {
+  if((serv.tt = tun_alloc("tap1919", IFF_TAP)) == NULL) {
     printf("wtf\n");
     return -1;
   }
-  tun_setup(serv.tun, "192.168.1.1", "255.255.255.0");
+  tun_setup(serv.tt, "192.168.1.1", "255.255.255.0");
 
-  add_event(&serv->events, listen_fd);
-  add_event(&serv->events, serv.tun->fd);
+  add_event(&serv.events, listen_fd, (void *)EV_LISTEN);
+  add_event(&serv.events, serv.tt->fd, (void *)EV_TUNTAP);
 
-  return serverloop(&serv);
+  return serverloop(&serv, listen_fd);
 }
 
 int

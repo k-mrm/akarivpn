@@ -5,6 +5,8 @@
 #include <signal.h>
 #include <poll.h>
 
+#include "akarivpn.h"
+
 int terminated = 0;
 
 void
@@ -29,7 +31,7 @@ del_event(struct events *es, int fd) {
         es->fds[j] = es->fds[j + 1];
       }
       for(int j = i; j < es->nfds; j++) {
-        es->ids[j] = es->ids[j + 1];
+        es->privs[j] = es->privs[j + 1];
       }
       return;
     }
@@ -37,8 +39,21 @@ del_event(struct events *es, int fd) {
 }
 
 int
-events_poll(struct events *es) {
-  return poll(es->fds, es->nfds, 2000);
+events_poll_pollin(struct events *es, int timeout, struct revent *revs) {
+  int nready = poll(es->fds, es->nfds, timeout);
+  int ridx = 0;
+  if(nready < 0)
+    return -1;
+
+  for(int i = 0; i < es->nfds; i++) {
+    struct pollfd *fd = &es->fds[i];
+    if(fd->revents & POLLIN) {
+      revs[ridx].fd = *fd;
+      revs[ridx++].priv = es->privs[i];
+    }
+  }
+
+  return nready;
 }
 
 static void

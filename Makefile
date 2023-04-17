@@ -4,9 +4,9 @@ LD = ld
 CFLAGS += -Wall -Wextra -I ./ -Og
 
 TARGET = akarivpn-client akarivpn-server
-OBJS = akarivpn.o session.o tuntap.o
+OBJS = akarivpn.o tunnel.o tuntap.o netif.o
 COBJS = client/main.o
-SOBJS = server/main.o server/client.o
+SOBJS = server/main.o
 
 .PHONY: client server clean
 
