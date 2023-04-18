@@ -48,7 +48,6 @@ clientcore(struct vpn_client *cli) {
 
     switch((size_t)priv) {
       case EV_C_SERVER:
-        puts("tunnel");
         if((size = tcp_tunnel_read(cli->tunnel, buf, sizeof(buf))) <= 0) {
           tunnel_disconnected(cli->tunnel);
           return 0;
