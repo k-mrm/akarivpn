@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
 #include <poll.h>
@@ -18,17 +19,40 @@
 #include "tuntap.h"
 #include "server/server.h"
 #include "server/client.h"
+#include "fdb.h"
 
 extern int terminated;
 
 struct vpn_server {
   struct events events;
   struct tuntap *tt;
+  struct tunnel *clients[64];
+  int nclients;
+  struct fdb fdb;
 };
 
 #define EV_NULL         0
 #define EV_LISTEN       1
 #define EV_TUNTAP       2
+
+static void
+addclient(struct vpn_server *s, struct tunnel *t) {
+  s->clients[s->nclients] = t;
+  s->nclients++;
+}
+
+static void
+delclient(struct vpn_server *s, struct tunnel *t) {
+  for(int i = 0; i < s->nclients; i++) {
+    if(s->clients[i] == t) {
+      s->nclients--;
+      for(int j = i; j < s->nclients; j++) {
+        s->clients[j] = s->clients[j + 1];
+      }
+      return;
+    }
+  }
+}
 
 static int
 client_accept(struct vpn_server *serv, int listen_fd) {
@@ -37,6 +61,44 @@ client_accept(struct vpn_server *serv, int listen_fd) {
     return -1;
 
   add_event(&serv->events, t->fd, t);
+  addclient(serv, t);
+
+  return 0;
+}
+
+static void
+broadcast_to_clients(struct vpn_server *serv, unsigned char *buf, size_t size) {
+  for(int i = 0; i < serv->nclients; i++) {
+    struct tunnel *t = serv->clients[i];
+
+    if(tcp_tunnel_write(t, buf, size) <= 0) {
+      printf("tunnel write?\n");
+    }
+  }
+}
+
+static bool
+is_broadcast_addr(uint8_t *mac) {
+  static uint8_t baddr[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+
+  return !memcmp(mac, baddr, 6);
+}
+
+static int
+route(struct vpn_server *serv, unsigned char *buf, ssize_t size) {
+  struct ether_header *eth = (struct ether_header *)buf;
+  uint8_t *dst = eth->ether_dhost;
+
+  if(is_broadcast_addr(dst)) {
+    broadcast_to_clients(serv, buf, size);
+  } else {
+    struct tunnel *t = search(&serv->fdb, dst);
+    if(t) {
+      puts("gomen");
+    } else {
+      broadcast_to_clients(serv, buf, size);
+    }
+  }
 
   return 0;
 }
@@ -67,8 +129,8 @@ servercore(struct vpn_server *serv) {
       case EV_TUNTAP:
         if((size = tun_read(serv->tt, buf, sizeof(buf))) <= 0)
           return -1;
-
-        // TODO: route
+        if(route(serv, buf, size) < 0)
+          return -1;
         break;
       case EV_NULL:
         printf("error");
@@ -78,6 +140,7 @@ servercore(struct vpn_server *serv) {
 
         if((size = tcp_tunnel_read(tunnel, buf, sizeof(buf))) <= 0) {
           tunnel_disconnected(tunnel);
+          delclient(serv, tunnel);
           return 0;
         }
         l2packet_dump(buf, size);

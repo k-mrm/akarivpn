@@ -48,11 +48,11 @@ clientcore(struct vpn_client *cli) {
 
     switch((size_t)priv) {
       case EV_C_SERVER:
+        puts("tunnel");
         if((size = tcp_tunnel_read(cli->tunnel, buf, sizeof(buf))) <= 0) {
           tunnel_disconnected(cli->tunnel);
           return 0;
         }
-
         if(tun_write(cli->tt, buf, size) <= 0) {
           return -1;
         }
@@ -61,7 +61,6 @@ clientcore(struct vpn_client *cli) {
         if((size = tun_read(cli->tt, buf, sizeof(buf))) <= 0) {
           return -1;
         }
-
         if(tcp_tunnel_write(cli->tunnel, buf, size) <= 0) {
           return -1;
         }
@@ -77,7 +76,7 @@ clientcore(struct vpn_client *cli) {
 
 static int
 do_vpn_client(char *host, char *port, char *myip) {
-  struct vpn_client client;
+  struct vpn_client client = {0};
   struct tunnel *tunnel;
 
   if((client.tt = tun_alloc("tap114514", IFF_TAP)) == NULL) {
@@ -92,6 +91,9 @@ do_vpn_client(char *host, char *port, char *myip) {
 
   add_event(&client.events, client.tt->fd, (void *)EV_C_TUNTAP);
   add_event(&client.events, tunnel->fd, (void *)EV_C_SERVER);
+
+  client.tunnel = tunnel;
+  printf("client: setup done\n");
 
   while(!terminated && clientcore(&client) == 0)
     ;
