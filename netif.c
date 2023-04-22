@@ -19,6 +19,12 @@
 #include "netif.h"
 
 static void
+hwaddrfmt(uint8_t *hw, char *str) {
+  snprintf(str, 32, "%02x:%02x:%02x:%02x:%02x:%02x", 
+           hw[0], hw[1], hw[2], hw[3], hw[4], hw[5]);
+}
+
+static void
 ipv4addrfmt(uint32_t ipaddr, char *str) {
   uint8_t *ip = (uint8_t *)&ipaddr;
 
@@ -72,6 +78,36 @@ ipv6_packet_dump(unsigned char *buf) {
   printf("ipv6 %s ---> %s %s\n", s_str, d_str, ip_protocol_fmt(ip6->ip6_nxt));
 }
 
+static void
+arp_packet_dump(unsigned char *packet) {
+  struct arphdr *arp = (struct arphdr *)packet;
+  unsigned char hln = arp->ar_hln;
+  unsigned char pln = arp->ar_pln;
+  int op = ntohs(arp->ar_op);
+  uint8_t *body = packet + sizeof(struct arphdr);
+  uint8_t *sha = body;
+  uint8_t *sip = sha + hln;
+  uint8_t *tha = sip + pln;
+  uint8_t *tip = tha + hln;
+  char ssha[32], stha[32], ssip[32], stip[32];
+
+  hwaddrfmt(sha, ssha);
+  hwaddrfmt(tha, stha);
+  snprintf(ssip, 32, "%d.%d.%d.%d", sip[0], sip[1], sip[2], sip[3]);
+  snprintf(stip, 32, "%d.%d.%d.%d", tip[0], tip[1], tip[2], tip[3]);
+
+  switch(op) {
+    case ARPOP_REPLY:
+      printf("arp reply %s %s says: %s is %s\n", ssha, ssip, stip, stha);
+      break;
+    case ARPOP_REQUEST:
+      printf("arp request %s %s says: who has %s?\n", ssha, ssip, stip);
+      break;
+    default:
+      break;
+  }
+}
+
 void
 l3packet_dump(unsigned char *packet, size_t size, unsigned short type) {
   switch(type) {
@@ -80,6 +116,9 @@ l3packet_dump(unsigned char *packet, size_t size, unsigned short type) {
       break;
     case 0x86dd:    // ipv6
       ipv6_packet_dump(packet);
+      break;
+    case 0x0806:
+      arp_packet_dump(packet);
       break;
     default:
       printf("?\n");

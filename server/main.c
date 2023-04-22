@@ -29,6 +29,7 @@ struct vpn_server {
   struct tunnel *clients[64];
   int nclients;
   struct fdb fdb;
+  struct fdb client_tab;
 };
 
 #define EV_NULL         0
@@ -67,9 +68,11 @@ client_accept(struct vpn_server *serv, int listen_fd) {
 }
 
 static void
-broadcast_to_clients(struct vpn_server *serv, unsigned char *buf, size_t size) {
+broadcast_to_clients(struct vpn_server *serv, struct tunnel *sender, unsigned char *buf, size_t size) {
   for(int i = 0; i < serv->nclients; i++) {
     struct tunnel *t = serv->clients[i];
+    if(t == sender)
+      continue;
 
     if(tcp_tunnel_write(t, buf, size) <= 0) {
       printf("tunnel write?\n");
@@ -84,23 +87,70 @@ is_broadcast_addr(uint8_t *mac) {
   return !memcmp(mac, baddr, 6);
 }
 
+static void
+unicast_to_client(struct tunnel *to, unsigned char *buf, size_t size) {
+  tcp_tunnel_write(to, buf, size);
+}
+
 static int
 route(struct vpn_server *serv, unsigned char *buf, ssize_t size) {
   struct ether_header *eth = (struct ether_header *)buf;
   uint8_t *dst = eth->ether_dhost;
 
   if(is_broadcast_addr(dst)) {
-    broadcast_to_clients(serv, buf, size);
+    broadcast_to_clients(serv, NULL, buf, size);
   } else {
     struct tunnel *t = search(&serv->fdb, dst);
     if(t) {
       puts("gomen");
     } else {
-      broadcast_to_clients(serv, buf, size);
+      broadcast_to_clients(serv, NULL, buf, size);
     }
   }
 
   return 0;
+}
+
+static struct tunnel *
+hw_to_target(struct vpn_server *serv, uint8_t *dst) {
+  return NULL;
+}
+
+static void
+learn_hwaddr_client(struct vpn_server *serv, uint8_t *hwaddr, struct tunnel *tunnel) {
+  printf("learning: %02x:%02x:%02x:%02x:%02x:%02x is %d\n",
+         hwaddr[0], hwaddr[1], hwaddr[2], hwaddr[3], hwaddr[4], hwaddr[5], tunnel->fd);
+  if(learn(&serv->client_tab, tunnel, hwaddr) < 0)
+    printf("learn failed\n");
+}
+
+static ssize_t
+do_recv_tunnel(struct vpn_server *serv, struct tunnel *tunnel, unsigned char *buf, size_t nbytes) {
+  ssize_t size;
+  struct ether_header *eth;
+  uint8_t *dst, *src;
+
+  size = tcp_tunnel_read(tunnel, buf, nbytes);
+  if(size <= 0)
+    return 0;
+
+  eth = (struct ether_header *)buf;
+  dst = eth->ether_dhost;
+
+  if(is_broadcast_addr(dst)) {
+    src = eth->ether_shost;
+    learn_hwaddr_client(serv, src, tunnel);
+    broadcast_to_clients(serv, tunnel, buf, size);
+  } else {
+    printf("unicast to %02x:%02x:%02x:%02x:%02x:%02x\n",
+           dst[0], dst[1], dst[2], dst[3], dst[4], dst[5]);
+    struct tunnel *target = search(&serv->client_tab, dst);
+    if(target) {
+      unicast_to_client(target, buf, size);
+    }
+  }
+
+  return size;
 }
 
 static int
@@ -129,6 +179,8 @@ servercore(struct vpn_server *serv) {
       case EV_TUNTAP:
         if((size = tun_read(serv->tt, buf, sizeof(buf))) <= 0)
           return -1;
+        printf("tttt: ");
+        l2packet_dump(buf, size);
         if(route(serv, buf, size) < 0)
           return -1;
         break;
@@ -138,12 +190,15 @@ servercore(struct vpn_server *serv) {
       default:
         tunnel = priv; 
 
-        if((size = tcp_tunnel_read(tunnel, buf, sizeof(buf))) <= 0) {
+        size = do_recv_tunnel(serv, tunnel, buf, sizeof(buf));
+        if(size <= 0) {
           tunnel_disconnected(tunnel);
           delclient(serv, tunnel);
           return 0;
         }
+
         l2packet_dump(buf, size);
+
         if(tun_write(serv->tt, buf, size) <= 0)
           return -1;
         break;

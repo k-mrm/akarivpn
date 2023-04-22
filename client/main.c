@@ -52,6 +52,8 @@ clientcore(struct vpn_client *cli) {
           tunnel_disconnected(cli->tunnel);
           return 0;
         }
+        printf("ssss: ");
+        l2packet_dump(buf, size);
         if(tun_write(cli->tt, buf, size) <= 0) {
           return -1;
         }
@@ -60,6 +62,8 @@ clientcore(struct vpn_client *cli) {
         if((size = tun_read(cli->tt, buf, sizeof(buf))) <= 0) {
           return -1;
         }
+        printf("tttt: ");
+        l2packet_dump(buf, size);
         if(tcp_tunnel_write(cli->tunnel, buf, size) <= 0) {
           return -1;
         }
