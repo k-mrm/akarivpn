@@ -1,6 +1,6 @@
 # akarivpn
 
-なんちゃってVPN
+なんちゃってVPN with tuntap
 
 ## Usage
 - prepare environment
