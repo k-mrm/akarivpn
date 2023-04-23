@@ -124,6 +124,11 @@ learn_hwaddr_client(struct vpn_server *serv, uint8_t *hwaddr, struct tunnel *tun
     printf("learn failed\n");
 }
 
+static bool
+packet_is_arp(struct ether_header *pkt) {
+  return ntohs(pkt->ether_type) == 0x0806;
+}
+
 static ssize_t
 do_recv_tunnel(struct vpn_server *serv, struct tunnel *tunnel, unsigned char *buf, size_t nbytes) {
   ssize_t size;
@@ -136,16 +141,23 @@ do_recv_tunnel(struct vpn_server *serv, struct tunnel *tunnel, unsigned char *bu
 
   eth = (struct ether_header *)buf;
   dst = eth->ether_dhost;
+  src = eth->ether_shost;
 
   if(is_broadcast_addr(dst)) {
-    src = eth->ether_shost;
     learn_hwaddr_client(serv, src, tunnel);
     broadcast_to_clients(serv, tunnel, buf, size);
   } else {
+    struct tunnel *target;
     printf("unicast to %02x:%02x:%02x:%02x:%02x:%02x\n",
            dst[0], dst[1], dst[2], dst[3], dst[4], dst[5]);
-    struct tunnel *target = search(&serv->client_tab, dst);
+
+    if(packet_is_arp(eth)) {
+      learn_hwaddr_client(serv, src, tunnel);
+    }
+
+    target = search(&serv->client_tab, dst);
     if(target) {
+      printf("unicast OK: %d\n", target->fd);
       unicast_to_client(target, buf, size);
     }
   }
