@@ -1,6 +1,9 @@
 # akarivpn
 
-なんちゃってVPN with tuntap
+a toy L2 VPN with tap interface
+
+## Warning
+buggy
 
 ## Usage
 - prepare environment
