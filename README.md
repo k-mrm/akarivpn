@@ -32,13 +32,13 @@ $ sh demons.sh
 
 ```
 $ sudo ip netns exec host1 bash
-# akarivpn-client -i 192.168.1.10 -s 10.0.0.100
+# ./akarivpn-client -i 192.168.1.10 -s 10.0.0.100
 ```
 4. Start client 2 in netns 2
 
 ```
 $ sudo ip netns exec host2 bash
-# akarivpn-client -i 192.168.1.20 -s 10.0.0.100
+# ./akarivpn-client -i 192.168.1.20 -s 10.0.0.100
 ```
 
 ### ping each other
