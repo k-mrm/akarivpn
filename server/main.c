@@ -18,7 +18,6 @@
 #include "netif.h"
 #include "tuntap.h"
 #include "server/server.h"
-#include "server/client.h"
 #include "fdb.h"
 
 extern int terminated;
@@ -102,7 +101,7 @@ route(struct vpn_server *serv, unsigned char *buf, ssize_t size) {
   } else {
     struct tunnel *t = search(&serv->fdb, dst);
     if(t) {
-      puts("gomen");
+      unicast_to_client(t, buf, size);
     } else {
       broadcast_to_clients(serv, NULL, buf, size);
     }
